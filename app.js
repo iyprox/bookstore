@@ -1,38 +1,63 @@
-const express = require("express");
-const bodyParser = require("body-parser");
-const CONFIG = require("./config/config");
-const connectToDB = require("./db/mongodb");
+const express = require("express")
+const bodyParser = require("body-parser")
+const rateLimit = require("express-rate-limit")
+const helmet = require('helmet')
+const { requiresAuth } = require('express-openid-connect');
+// const logger = require("./logging/logger")
 
-const dotenv = require("dotenv");
-const mongoose = require("mongoose");
-const app = express();
-dotenv.config();
+const auth0Middleware = require('./auth/auth0');
+
+const CONFIG = require("./config/config")
 
 //Routes
-const bookRouter = require("./routes/books_routes");
-const authorRouter = require("./routes/author_routes");
+const bookRouter = require("./routes/books_routes")
+const authorRouter =  require("./routes/authors_routes")
+
+const connectToDb = require("./db/mongodb")
+
+
+const app = express()
 
 // Connect to Mongodb Database
-connectToDB();
+connectToDb()
+
 
 //Add Middleware
-app.use(bodyParser.urlencoded({ extended: false }));
-app.use(bodyParser.json());
-app.use("/api/v1/books", bookRouter);
-app.use("/api/v1/authors", authorRouter);
+app.use(bodyParser.urlencoded({ extended: false }))
+app.use(bodyParser.json())
+
+// auth router attaches /login, /logout, and /callback routes to the baseURL
+app.use(auth0Middleware);
+
+const limiter = rateLimit({
+	windowMs: 15 * 60 * 1000, // 15 minutes
+	max: 100, // Limit each IP to 100 requests per `window` (here, per 15 minutes)
+	standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+	legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+})
+// Apply the rate limiting middleware to all requests
+app.use(limiter)
+
+//security middleware
+app.use(helmet())
+
+app.use("/api/v1/books", requiresAuth(), bookRouter)
+app.use("/api/v1/authors", requiresAuth(), authorRouter)
+
 
 app.get("/", (req, res) => {
-  res.send("Hey! its a Bookstore");
-});
+    res.send("Hey! its a Bookstore")
+})
 
 //Error handler middleware
 app.use((err, req, res, next) => {
-  console.log(err);
-  const errorStatus = err.status || 500;
-  res.status(errorStatus).send(err.message);
-  next();
-});
-
+    // logger.error(err.message)
+    console.log(err)
+    const errorStatus = err.status || 500
+    res.status(errorStatus).send(err.message)
+    next()
+})
+//logger.info
 app.listen(CONFIG.PORT, () => {
-  console.log(`Server is up on http://localhost:${CONFIG.PORT}`);
-});
+    console.log(`Server is up on http://localhost:${CONFIG.PORT}`)
+})
